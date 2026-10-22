@@ -55,6 +55,7 @@ WSGI_APPLICATION = "fuel_api.wsgi.application"
 ASGI_APPLICATION = "fuel_api.asgi.application"
 
 USE_POSTGIS = os.environ.get("USE_POSTGIS", "0").lower() in {"1", "true", "yes"}
+MAPBOX_ACCESS_TOKEN = os.environ.get("MAPBOX_ACCESS_TOKEN", "")
 if USE_POSTGIS:
     # Django GIS needs the native GDAL DLL on Windows; winget's GDAL package
     # installs it outside the Python environment.

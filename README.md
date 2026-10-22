@@ -53,4 +53,20 @@ After that setup, verify the project and create the spatial table:
 
 The station model, geocoding status fields, and reproducible cleaned-data
 import command are now in place. The next implementation phase is geocoding
-the retained stations.
+the retained stations. Add `MAPBOX_ACCESS_TOKEN` to the ignored `.env` file,
+then start with a small sample:
+
+```powershell
+.\.venv312\Scripts\python.exe manage.py geocode_stations --limit 50
+```
+
+The command skips successful stations, stores the provider query and
+relevance, and records failed or ambiguous results for review. It processes
+only 50 stations by default; increase `--limit` only after reviewing the
+sample. Use `--retry-failed` explicitly when retrying non-successful results.
+
+The initial Mapbox v6 sample returned 13 precise matches and 37 ambiguous
+street/place results. Those ambiguous records are intentionally not assigned
+coordinates. Do not run the full 6,738-station batch until the provider is
+confirmed to return station-level results for this dataset; Mapbox v6 does not
+return POI features from its Geocoding API.
