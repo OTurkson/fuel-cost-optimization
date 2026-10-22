@@ -1,0 +1,749 @@
+{
+  "info": {
+    "name": "Fuel optimization",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Send requests in order with Django running. Successful responses include a Leaflet map in Visualize. Prices are static demo values; distance limitations are returned by the API."
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://127.0.0.1:8000"
+    }
+  ],
+  "item": [
+    {
+      "name": "Short trip - Dallas to Houston (no purchases)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/routes/optimize/",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "routes",
+            "optimize",
+            ""
+          ]
+        },
+        "description": "Open the response Visualize tab after sending.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"start\": {\n    \"longitude\": -96.797,\n    \"latitude\": 32.7767\n  },\n  \"destination\": {\n    \"longitude\": -95.3698,\n    \"latitude\": 29.7604\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "",
+              "pm.test('Trip succeeds', function () { pm.response.to.have.status(200); });",
+              "if (pm.response.code === 200) {",
+              " const trip = pm.response.json(), s = trip.summary;",
+              " pm.test('Geometry and vehicle assumptions are returned', function () {",
+              "  pm.expect(trip.route.geometry.type).to.eql('LineString');",
+              "  pm.expect(trip.route.maximum_range_miles).to.eql(500);",
+              "  pm.expect(trip.route.fuel_economy_mpg).to.eql(10);",
+              " });",
+              " pm.test('Fuel and distance totals reconcile', function () {",
+              "  pm.expect(s.starting_fuel_gallons + s.total_gallons_purchased).to.be.closeTo(s.total_gallons_consumed + s.ending_fuel_gallons, 0.000001);",
+              "  pm.expect(s.main_route_miles + s.detour_miles).to.be.closeTo(s.total_distance_miles, 0.000001);",
+              "  pm.expect(s.total_distance_miles / 10).to.be.closeTo(s.total_gallons_consumed, 0.000001);",
+              "  pm.expect(trip.fuel_stops.reduce((sum, stop) => sum + stop.fuel_cost, 0)).to.be.closeTo(s.total_fuel_cost, 0.000001);",
+              " });",
+              " pm.test('Stops respect capacity and legs respect range', function () {",
+              "  trip.fuel_stops.forEach(stop => {",
+              "   pm.expect(stop.arrival_fuel_gallons).to.be.at.least(0);",
+              "   pm.expect(stop.departure_fuel_gallons).to.be.at.most(50);",
+              "   pm.expect(stop.arrival_fuel_gallons + stop.gallons_purchased).to.be.closeTo(stop.departure_fuel_gallons, 0.000001);",
+              "  });",
+              "  trip.legs.forEach(leg => pm.expect(leg.distance_miles_estimate).to.be.at.most(500.000001));",
+              " });",
+              " pm.test('Routing call budget is respected', function () {",
+              "  pm.expect(trip.metrics.routing_api_calls).to.be.at.most(2);",
+              " });",
+              "}",
+              "",
+              "// The API already selected stops and calculated costs; this only draws them.",
+              "var payload = pm.response.json();",
+              "if (pm.response.code === 200 && payload.route && payload.summary) {",
+              "    // Keep response numbers intact; round only the labels shown on the map.",
+              "    payload.display = {",
+              "        distance: payload.summary.total_distance_miles.toFixed(2),",
+              "        consumption: payload.summary.total_gallons_consumed.toFixed(2),",
+              "        cost: payload.summary.total_fuel_cost.toFixed(2)",
+              "    };",
+              "    payload.fuel_stops.forEach(function(stop, index) {",
+              "        stop.display = {order:index + 1, price:stop.price_per_gallon.toFixed(3),",
+              "            purchased:stop.gallons_purchased.toFixed(2), cost:stop.fuel_cost.toFixed(2),",
+              "            arrival:stop.arrival_fuel_gallons.toFixed(2), departure:stop.departure_fuel_gallons.toFixed(2),",
+              "            detour:stop.detour_miles.toFixed(2)};",
+              "    });",
+              "    pm.visualizer.set(`",
+              "<link rel=\"stylesheet\" href=\"https://unpkg.com/leaflet@1.9.4/dist/leaflet.css\"",
+              " integrity=\"sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=\" crossorigin=\"\">",
+              "<style>",
+              " body {font:14px system-ui,sans-serif;color:#203040;margin:16px}",
+              " #map {height:480px;border:1px solid #ccd5df;border-radius:8px}",
+              " .summary {display:flex;gap:24px;flex-wrap:wrap;margin:12px 0}",
+              " .summary strong {display:block;font-size:22px}",
+              " .note {color:#566574;margin:10px 0} #status {color:#8a4300}",
+              " table {border-collapse:collapse;width:100%;margin:12px 0}",
+              " td,th {padding:8px;text-align:left;border-bottom:1px solid #dce2e8}",
+              "</style>",
+              "<h2>Fuel-optimized trip</h2>",
+              "<div class=\"summary\">",
+              " <span>Driven miles<strong>{{display.distance}}</strong></span>",
+              " <span>Gallons consumed<strong>{{display.consumption}}</strong></span>",
+              " <span>Estimated purchases (USD)<strong>&#36;{{display.cost}}</strong></span>",
+              " <span>Fuel stops<strong>{{summary.number_of_stops}}</strong></span>",
+              "</div>",
+              "<p class=\"note\">The line shows the main route. Station detours are included in the totals,",
+              " but their shapes are unavailable. Intermediate distances and fuel balances are estimates.</p>",
+              "<div id=\"status\">Loading map library\u2026</div><div id=\"map\"></div>",
+              "<table><thead><tr><th>Stop</th><th>USD/gallon</th><th>Buy gallons</th><th>Cost (USD)</th>",
+              " <th>Fuel on arrival</th><th>Fuel on departure</th><th>Detour miles</th></tr></thead>",
+              "<tbody>{{#each fuel_stops}}<tr><td>{{display.order}}. {{name}}</td><td>{{display.price}}</td>",
+              " <td>{{display.purchased}}</td><td>{{display.cost}}</td><td>{{display.arrival}}</td>",
+              " <td>{{display.departure}}</td><td>{{display.detour}}</td></tr>{{/each}}</tbody></table>",
+              "<p class=\"note\">{{pricing_assumption}}</p><p class=\"note\">{{route.attribution}}</p>",
+              "<p class=\"note\">{{optimization.detour_attribution}}</p>",
+              "<script src=\"https://unpkg.com/leaflet@1.9.4/dist/leaflet.js\"",
+              " integrity=\"sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=\" crossorigin=\"\"></script>",
+              "<script>",
+              "var statusBox = document.getElementById('status');",
+              "if (typeof L === 'undefined') {",
+              " statusBox.textContent = 'Map library could not load. Check Postman external-resource access. Trip totals and stops remain available below.';",
+              "} else {",
+              " pm.getData(function(error, data) {",
+              "  if (error) {statusBox.textContent = 'Could not read response data for the map.'; return;}",
+              "  try {",
+              "   var map = L.map('map');",
+              "   var tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {",
+              "    maxZoom:19, attribution:'&copy; <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors'",
+              "   }).addTo(map);",
+              "   tiles.on('tileerror', function() {statusBox.textContent = 'Some map tiles could not load. The returned route and markers are still shown.';});",
+              "   var line = L.geoJSON(data.route.geometry, {style:{color:'#2563eb', weight:4}}).addTo(map);",
+              "   var bounds = line.getBounds();",
+              "   function marker(location, text) {",
+              "    // Text nodes keep station names and provider labels out of HTML markup.",
+              "    var popup = document.createElement('div'); popup.textContent = text;",
+              "    L.marker([location.latitude, location.longitude]).addTo(map).bindPopup(popup);",
+              "    bounds.extend([location.latitude, location.longitude]);",
+              "   }",
+              "   marker(data.start, 'Start'); marker(data.destination, 'Destination');",
+              "   data.fuel_stops.forEach(function(stop, index) {",
+              "    marker(stop, (index + 1) + '. ' + stop.name + ' | $' + stop.price_per_gallon.toFixed(3) +",
+              "     '/gal | Buy ' + stop.gallons_purchased.toFixed(2) + ' gal | $' + stop.fuel_cost.toFixed(2));",
+              "   });",
+              "   map.fitBounds(bounds, {padding:[24,24]});",
+              "   statusBox.textContent = data.fuel_stops.length ? 'Click a marker for purchase details.' : 'Starting fuel covers this trip; no purchases are needed.';",
+              "   setTimeout(function() {map.invalidateSize();}, 200);",
+              "  } catch (failure) {statusBox.textContent = 'Map rendering failed. Trip totals and stop details remain available below.';}",
+              " });",
+              "}",
+              "</script>`, payload);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Repeat short trip - cached route",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/routes/optimize/",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "routes",
+            "optimize",
+            ""
+          ]
+        },
+        "description": "Open the response Visualize tab after sending.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"start\": {\n    \"longitude\": -96.797,\n    \"latitude\": 32.7767\n  },\n  \"destination\": {\n    \"longitude\": -95.3698,\n    \"latitude\": 29.7604\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "",
+              "pm.test('Trip succeeds', function () { pm.response.to.have.status(200); });",
+              "if (pm.response.code === 200) {",
+              " const trip = pm.response.json(), s = trip.summary;",
+              " pm.test('Geometry and vehicle assumptions are returned', function () {",
+              "  pm.expect(trip.route.geometry.type).to.eql('LineString');",
+              "  pm.expect(trip.route.maximum_range_miles).to.eql(500);",
+              "  pm.expect(trip.route.fuel_economy_mpg).to.eql(10);",
+              " });",
+              " pm.test('Fuel and distance totals reconcile', function () {",
+              "  pm.expect(s.starting_fuel_gallons + s.total_gallons_purchased).to.be.closeTo(s.total_gallons_consumed + s.ending_fuel_gallons, 0.000001);",
+              "  pm.expect(s.main_route_miles + s.detour_miles).to.be.closeTo(s.total_distance_miles, 0.000001);",
+              "  pm.expect(s.total_distance_miles / 10).to.be.closeTo(s.total_gallons_consumed, 0.000001);",
+              "  pm.expect(trip.fuel_stops.reduce((sum, stop) => sum + stop.fuel_cost, 0)).to.be.closeTo(s.total_fuel_cost, 0.000001);",
+              " });",
+              " pm.test('Stops respect capacity and legs respect range', function () {",
+              "  trip.fuel_stops.forEach(stop => {",
+              "   pm.expect(stop.arrival_fuel_gallons).to.be.at.least(0);",
+              "   pm.expect(stop.departure_fuel_gallons).to.be.at.most(50);",
+              "   pm.expect(stop.arrival_fuel_gallons + stop.gallons_purchased).to.be.closeTo(stop.departure_fuel_gallons, 0.000001);",
+              "  });",
+              "  trip.legs.forEach(leg => pm.expect(leg.distance_miles_estimate).to.be.at.most(500.000001));",
+              " });",
+              " pm.test('Routing call budget is respected', function () {",
+              "  pm.expect(trip.metrics.routing_api_calls).to.be.at.most(2);",
+              " });",
+              "}",
+              "",
+              "pm.test('Route cache hit', () => { pm.expect(pm.response.json().metrics.route_cache_hits).to.eql(1); });",
+              "// The API already selected stops and calculated costs; this only draws them.",
+              "var payload = pm.response.json();",
+              "if (pm.response.code === 200 && payload.route && payload.summary) {",
+              "    // Keep response numbers intact; round only the labels shown on the map.",
+              "    payload.display = {",
+              "        distance: payload.summary.total_distance_miles.toFixed(2),",
+              "        consumption: payload.summary.total_gallons_consumed.toFixed(2),",
+              "        cost: payload.summary.total_fuel_cost.toFixed(2)",
+              "    };",
+              "    payload.fuel_stops.forEach(function(stop, index) {",
+              "        stop.display = {order:index + 1, price:stop.price_per_gallon.toFixed(3),",
+              "            purchased:stop.gallons_purchased.toFixed(2), cost:stop.fuel_cost.toFixed(2),",
+              "            arrival:stop.arrival_fuel_gallons.toFixed(2), departure:stop.departure_fuel_gallons.toFixed(2),",
+              "            detour:stop.detour_miles.toFixed(2)};",
+              "    });",
+              "    pm.visualizer.set(`",
+              "<link rel=\"stylesheet\" href=\"https://unpkg.com/leaflet@1.9.4/dist/leaflet.css\"",
+              " integrity=\"sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=\" crossorigin=\"\">",
+              "<style>",
+              " body {font:14px system-ui,sans-serif;color:#203040;margin:16px}",
+              " #map {height:480px;border:1px solid #ccd5df;border-radius:8px}",
+              " .summary {display:flex;gap:24px;flex-wrap:wrap;margin:12px 0}",
+              " .summary strong {display:block;font-size:22px}",
+              " .note {color:#566574;margin:10px 0} #status {color:#8a4300}",
+              " table {border-collapse:collapse;width:100%;margin:12px 0}",
+              " td,th {padding:8px;text-align:left;border-bottom:1px solid #dce2e8}",
+              "</style>",
+              "<h2>Fuel-optimized trip</h2>",
+              "<div class=\"summary\">",
+              " <span>Driven miles<strong>{{display.distance}}</strong></span>",
+              " <span>Gallons consumed<strong>{{display.consumption}}</strong></span>",
+              " <span>Estimated purchases (USD)<strong>&#36;{{display.cost}}</strong></span>",
+              " <span>Fuel stops<strong>{{summary.number_of_stops}}</strong></span>",
+              "</div>",
+              "<p class=\"note\">The line shows the main route. Station detours are included in the totals,",
+              " but their shapes are unavailable. Intermediate distances and fuel balances are estimates.</p>",
+              "<div id=\"status\">Loading map library\u2026</div><div id=\"map\"></div>",
+              "<table><thead><tr><th>Stop</th><th>USD/gallon</th><th>Buy gallons</th><th>Cost (USD)</th>",
+              " <th>Fuel on arrival</th><th>Fuel on departure</th><th>Detour miles</th></tr></thead>",
+              "<tbody>{{#each fuel_stops}}<tr><td>{{display.order}}. {{name}}</td><td>{{display.price}}</td>",
+              " <td>{{display.purchased}}</td><td>{{display.cost}}</td><td>{{display.arrival}}</td>",
+              " <td>{{display.departure}}</td><td>{{display.detour}}</td></tr>{{/each}}</tbody></table>",
+              "<p class=\"note\">{{pricing_assumption}}</p><p class=\"note\">{{route.attribution}}</p>",
+              "<p class=\"note\">{{optimization.detour_attribution}}</p>",
+              "<script src=\"https://unpkg.com/leaflet@1.9.4/dist/leaflet.js\"",
+              " integrity=\"sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=\" crossorigin=\"\"></script>",
+              "<script>",
+              "var statusBox = document.getElementById('status');",
+              "if (typeof L === 'undefined') {",
+              " statusBox.textContent = 'Map library could not load. Check Postman external-resource access. Trip totals and stops remain available below.';",
+              "} else {",
+              " pm.getData(function(error, data) {",
+              "  if (error) {statusBox.textContent = 'Could not read response data for the map.'; return;}",
+              "  try {",
+              "   var map = L.map('map');",
+              "   var tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {",
+              "    maxZoom:19, attribution:'&copy; <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors'",
+              "   }).addTo(map);",
+              "   tiles.on('tileerror', function() {statusBox.textContent = 'Some map tiles could not load. The returned route and markers are still shown.';});",
+              "   var line = L.geoJSON(data.route.geometry, {style:{color:'#2563eb', weight:4}}).addTo(map);",
+              "   var bounds = line.getBounds();",
+              "   function marker(location, text) {",
+              "    // Text nodes keep station names and provider labels out of HTML markup.",
+              "    var popup = document.createElement('div'); popup.textContent = text;",
+              "    L.marker([location.latitude, location.longitude]).addTo(map).bindPopup(popup);",
+              "    bounds.extend([location.latitude, location.longitude]);",
+              "   }",
+              "   marker(data.start, 'Start'); marker(data.destination, 'Destination');",
+              "   data.fuel_stops.forEach(function(stop, index) {",
+              "    marker(stop, (index + 1) + '. ' + stop.name + ' | $' + stop.price_per_gallon.toFixed(3) +",
+              "     '/gal | Buy ' + stop.gallons_purchased.toFixed(2) + ' gal | $' + stop.fuel_cost.toFixed(2));",
+              "   });",
+              "   map.fitBounds(bounds, {padding:[24,24]});",
+              "   statusBox.textContent = data.fuel_stops.length ? 'Click a marker for purchase details.' : 'Starting fuel covers this trip; no purchases are needed.';",
+              "   setTimeout(function() {map.invalidateSize();}, 200);",
+              "  } catch (failure) {statusBox.textContent = 'Map rendering failed. Trip totals and stop details remain available below.';}",
+              " });",
+              "}",
+              "</script>`, payload);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Long trip - Dallas to Chicago",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/routes/optimize/",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "routes",
+            "optimize",
+            ""
+          ]
+        },
+        "description": "Uses currently geocoded stations. Incomplete coverage can return fuel_plan_not_found (422). View successful results in Visualize.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"start\": {\n    \"longitude\": -96.797,\n    \"latitude\": 32.7767\n  },\n  \"destination\": {\n    \"longitude\": -87.6298,\n    \"latitude\": 41.8781\n  },\n  \"candidate_search\": {\n    \"corridor_miles\": 5,\n    \"limit\": 100\n  },\n  \"detour_evaluation\": {\n    \"limit\": 29\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "",
+              "pm.test('Trip succeeds', function () { pm.response.to.have.status(200); });",
+              "if (pm.response.code === 200) {",
+              " const trip = pm.response.json(), s = trip.summary;",
+              " pm.test('Geometry and vehicle assumptions are returned', function () {",
+              "  pm.expect(trip.route.geometry.type).to.eql('LineString');",
+              "  pm.expect(trip.route.maximum_range_miles).to.eql(500);",
+              "  pm.expect(trip.route.fuel_economy_mpg).to.eql(10);",
+              " });",
+              " pm.test('Fuel and distance totals reconcile', function () {",
+              "  pm.expect(s.starting_fuel_gallons + s.total_gallons_purchased).to.be.closeTo(s.total_gallons_consumed + s.ending_fuel_gallons, 0.000001);",
+              "  pm.expect(s.main_route_miles + s.detour_miles).to.be.closeTo(s.total_distance_miles, 0.000001);",
+              "  pm.expect(s.total_distance_miles / 10).to.be.closeTo(s.total_gallons_consumed, 0.000001);",
+              "  pm.expect(trip.fuel_stops.reduce((sum, stop) => sum + stop.fuel_cost, 0)).to.be.closeTo(s.total_fuel_cost, 0.000001);",
+              " });",
+              " pm.test('Stops respect capacity and legs respect range', function () {",
+              "  trip.fuel_stops.forEach(stop => {",
+              "   pm.expect(stop.arrival_fuel_gallons).to.be.at.least(0);",
+              "   pm.expect(stop.departure_fuel_gallons).to.be.at.most(50);",
+              "   pm.expect(stop.arrival_fuel_gallons + stop.gallons_purchased).to.be.closeTo(stop.departure_fuel_gallons, 0.000001);",
+              "  });",
+              "  trip.legs.forEach(leg => pm.expect(leg.distance_miles_estimate).to.be.at.most(500.000001));",
+              " });",
+              " pm.test('Routing call budget is respected', function () {",
+              "  pm.expect(trip.metrics.routing_api_calls).to.be.at.most(2);",
+              " });",
+              "}",
+              "",
+              "// The API already selected stops and calculated costs; this only draws them.",
+              "var payload = pm.response.json();",
+              "if (pm.response.code === 200 && payload.route && payload.summary) {",
+              "    // Keep response numbers intact; round only the labels shown on the map.",
+              "    payload.display = {",
+              "        distance: payload.summary.total_distance_miles.toFixed(2),",
+              "        consumption: payload.summary.total_gallons_consumed.toFixed(2),",
+              "        cost: payload.summary.total_fuel_cost.toFixed(2)",
+              "    };",
+              "    payload.fuel_stops.forEach(function(stop, index) {",
+              "        stop.display = {order:index + 1, price:stop.price_per_gallon.toFixed(3),",
+              "            purchased:stop.gallons_purchased.toFixed(2), cost:stop.fuel_cost.toFixed(2),",
+              "            arrival:stop.arrival_fuel_gallons.toFixed(2), departure:stop.departure_fuel_gallons.toFixed(2),",
+              "            detour:stop.detour_miles.toFixed(2)};",
+              "    });",
+              "    pm.visualizer.set(`",
+              "<link rel=\"stylesheet\" href=\"https://unpkg.com/leaflet@1.9.4/dist/leaflet.css\"",
+              " integrity=\"sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=\" crossorigin=\"\">",
+              "<style>",
+              " body {font:14px system-ui,sans-serif;color:#203040;margin:16px}",
+              " #map {height:480px;border:1px solid #ccd5df;border-radius:8px}",
+              " .summary {display:flex;gap:24px;flex-wrap:wrap;margin:12px 0}",
+              " .summary strong {display:block;font-size:22px}",
+              " .note {color:#566574;margin:10px 0} #status {color:#8a4300}",
+              " table {border-collapse:collapse;width:100%;margin:12px 0}",
+              " td,th {padding:8px;text-align:left;border-bottom:1px solid #dce2e8}",
+              "</style>",
+              "<h2>Fuel-optimized trip</h2>",
+              "<div class=\"summary\">",
+              " <span>Driven miles<strong>{{display.distance}}</strong></span>",
+              " <span>Gallons consumed<strong>{{display.consumption}}</strong></span>",
+              " <span>Estimated purchases (USD)<strong>&#36;{{display.cost}}</strong></span>",
+              " <span>Fuel stops<strong>{{summary.number_of_stops}}</strong></span>",
+              "</div>",
+              "<p class=\"note\">The line shows the main route. Station detours are included in the totals,",
+              " but their shapes are unavailable. Intermediate distances and fuel balances are estimates.</p>",
+              "<div id=\"status\">Loading map library\u2026</div><div id=\"map\"></div>",
+              "<table><thead><tr><th>Stop</th><th>USD/gallon</th><th>Buy gallons</th><th>Cost (USD)</th>",
+              " <th>Fuel on arrival</th><th>Fuel on departure</th><th>Detour miles</th></tr></thead>",
+              "<tbody>{{#each fuel_stops}}<tr><td>{{display.order}}. {{name}}</td><td>{{display.price}}</td>",
+              " <td>{{display.purchased}}</td><td>{{display.cost}}</td><td>{{display.arrival}}</td>",
+              " <td>{{display.departure}}</td><td>{{display.detour}}</td></tr>{{/each}}</tbody></table>",
+              "<p class=\"note\">{{pricing_assumption}}</p><p class=\"note\">{{route.attribution}}</p>",
+              "<p class=\"note\">{{optimization.detour_attribution}}</p>",
+              "<script src=\"https://unpkg.com/leaflet@1.9.4/dist/leaflet.js\"",
+              " integrity=\"sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=\" crossorigin=\"\"></script>",
+              "<script>",
+              "var statusBox = document.getElementById('status');",
+              "if (typeof L === 'undefined') {",
+              " statusBox.textContent = 'Map library could not load. Check Postman external-resource access. Trip totals and stops remain available below.';",
+              "} else {",
+              " pm.getData(function(error, data) {",
+              "  if (error) {statusBox.textContent = 'Could not read response data for the map.'; return;}",
+              "  try {",
+              "   var map = L.map('map');",
+              "   var tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {",
+              "    maxZoom:19, attribution:'&copy; <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors'",
+              "   }).addTo(map);",
+              "   tiles.on('tileerror', function() {statusBox.textContent = 'Some map tiles could not load. The returned route and markers are still shown.';});",
+              "   var line = L.geoJSON(data.route.geometry, {style:{color:'#2563eb', weight:4}}).addTo(map);",
+              "   var bounds = line.getBounds();",
+              "   function marker(location, text) {",
+              "    // Text nodes keep station names and provider labels out of HTML markup.",
+              "    var popup = document.createElement('div'); popup.textContent = text;",
+              "    L.marker([location.latitude, location.longitude]).addTo(map).bindPopup(popup);",
+              "    bounds.extend([location.latitude, location.longitude]);",
+              "   }",
+              "   marker(data.start, 'Start'); marker(data.destination, 'Destination');",
+              "   data.fuel_stops.forEach(function(stop, index) {",
+              "    marker(stop, (index + 1) + '. ' + stop.name + ' | $' + stop.price_per_gallon.toFixed(3) +",
+              "     '/gal | Buy ' + stop.gallons_purchased.toFixed(2) + ' gal | $' + stop.fuel_cost.toFixed(2));",
+              "   });",
+              "   map.fitBounds(bounds, {padding:[24,24]});",
+              "   statusBox.textContent = data.fuel_stops.length ? 'Click a marker for purchase details.' : 'Starting fuel covers this trip; no purchases are needed.';",
+              "   setTimeout(function() {map.invalidateSize();}, 200);",
+              "  } catch (failure) {statusBox.textContent = 'Map rendering failed. Trip totals and stop details remain available below.';}",
+              " });",
+              "}",
+              "</script>`, payload);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Address inputs - Dallas to Houston",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/routes/optimize/",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "routes",
+            "optimize",
+            ""
+          ]
+        },
+        "description": "Open the response Visualize tab after sending.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"start_address\": \"Dallas, TX, USA\",\n  \"destination_address\": \"Houston, TX, USA\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "",
+              "pm.test('Trip succeeds', function () { pm.response.to.have.status(200); });",
+              "if (pm.response.code === 200) {",
+              " const trip = pm.response.json(), s = trip.summary;",
+              " pm.test('Geometry and vehicle assumptions are returned', function () {",
+              "  pm.expect(trip.route.geometry.type).to.eql('LineString');",
+              "  pm.expect(trip.route.maximum_range_miles).to.eql(500);",
+              "  pm.expect(trip.route.fuel_economy_mpg).to.eql(10);",
+              " });",
+              " pm.test('Fuel and distance totals reconcile', function () {",
+              "  pm.expect(s.starting_fuel_gallons + s.total_gallons_purchased).to.be.closeTo(s.total_gallons_consumed + s.ending_fuel_gallons, 0.000001);",
+              "  pm.expect(s.main_route_miles + s.detour_miles).to.be.closeTo(s.total_distance_miles, 0.000001);",
+              "  pm.expect(s.total_distance_miles / 10).to.be.closeTo(s.total_gallons_consumed, 0.000001);",
+              "  pm.expect(trip.fuel_stops.reduce((sum, stop) => sum + stop.fuel_cost, 0)).to.be.closeTo(s.total_fuel_cost, 0.000001);",
+              " });",
+              " pm.test('Stops respect capacity and legs respect range', function () {",
+              "  trip.fuel_stops.forEach(stop => {",
+              "   pm.expect(stop.arrival_fuel_gallons).to.be.at.least(0);",
+              "   pm.expect(stop.departure_fuel_gallons).to.be.at.most(50);",
+              "   pm.expect(stop.arrival_fuel_gallons + stop.gallons_purchased).to.be.closeTo(stop.departure_fuel_gallons, 0.000001);",
+              "  });",
+              "  trip.legs.forEach(leg => pm.expect(leg.distance_miles_estimate).to.be.at.most(500.000001));",
+              " });",
+              " pm.test('Routing call budget is respected', function () {",
+              "  pm.expect(trip.metrics.routing_api_calls).to.be.at.most(2);",
+              " });",
+              "}",
+              "",
+              "// The API already selected stops and calculated costs; this only draws them.",
+              "var payload = pm.response.json();",
+              "if (pm.response.code === 200 && payload.route && payload.summary) {",
+              "    // Keep response numbers intact; round only the labels shown on the map.",
+              "    payload.display = {",
+              "        distance: payload.summary.total_distance_miles.toFixed(2),",
+              "        consumption: payload.summary.total_gallons_consumed.toFixed(2),",
+              "        cost: payload.summary.total_fuel_cost.toFixed(2)",
+              "    };",
+              "    payload.fuel_stops.forEach(function(stop, index) {",
+              "        stop.display = {order:index + 1, price:stop.price_per_gallon.toFixed(3),",
+              "            purchased:stop.gallons_purchased.toFixed(2), cost:stop.fuel_cost.toFixed(2),",
+              "            arrival:stop.arrival_fuel_gallons.toFixed(2), departure:stop.departure_fuel_gallons.toFixed(2),",
+              "            detour:stop.detour_miles.toFixed(2)};",
+              "    });",
+              "    pm.visualizer.set(`",
+              "<link rel=\"stylesheet\" href=\"https://unpkg.com/leaflet@1.9.4/dist/leaflet.css\"",
+              " integrity=\"sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=\" crossorigin=\"\">",
+              "<style>",
+              " body {font:14px system-ui,sans-serif;color:#203040;margin:16px}",
+              " #map {height:480px;border:1px solid #ccd5df;border-radius:8px}",
+              " .summary {display:flex;gap:24px;flex-wrap:wrap;margin:12px 0}",
+              " .summary strong {display:block;font-size:22px}",
+              " .note {color:#566574;margin:10px 0} #status {color:#8a4300}",
+              " table {border-collapse:collapse;width:100%;margin:12px 0}",
+              " td,th {padding:8px;text-align:left;border-bottom:1px solid #dce2e8}",
+              "</style>",
+              "<h2>Fuel-optimized trip</h2>",
+              "<div class=\"summary\">",
+              " <span>Driven miles<strong>{{display.distance}}</strong></span>",
+              " <span>Gallons consumed<strong>{{display.consumption}}</strong></span>",
+              " <span>Estimated purchases (USD)<strong>&#36;{{display.cost}}</strong></span>",
+              " <span>Fuel stops<strong>{{summary.number_of_stops}}</strong></span>",
+              "</div>",
+              "<p class=\"note\">The line shows the main route. Station detours are included in the totals,",
+              " but their shapes are unavailable. Intermediate distances and fuel balances are estimates.</p>",
+              "<div id=\"status\">Loading map library\u2026</div><div id=\"map\"></div>",
+              "<table><thead><tr><th>Stop</th><th>USD/gallon</th><th>Buy gallons</th><th>Cost (USD)</th>",
+              " <th>Fuel on arrival</th><th>Fuel on departure</th><th>Detour miles</th></tr></thead>",
+              "<tbody>{{#each fuel_stops}}<tr><td>{{display.order}}. {{name}}</td><td>{{display.price}}</td>",
+              " <td>{{display.purchased}}</td><td>{{display.cost}}</td><td>{{display.arrival}}</td>",
+              " <td>{{display.departure}}</td><td>{{display.detour}}</td></tr>{{/each}}</tbody></table>",
+              "<p class=\"note\">{{pricing_assumption}}</p><p class=\"note\">{{route.attribution}}</p>",
+              "<p class=\"note\">{{optimization.detour_attribution}}</p>",
+              "<script src=\"https://unpkg.com/leaflet@1.9.4/dist/leaflet.js\"",
+              " integrity=\"sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=\" crossorigin=\"\"></script>",
+              "<script>",
+              "var statusBox = document.getElementById('status');",
+              "if (typeof L === 'undefined') {",
+              " statusBox.textContent = 'Map library could not load. Check Postman external-resource access. Trip totals and stops remain available below.';",
+              "} else {",
+              " pm.getData(function(error, data) {",
+              "  if (error) {statusBox.textContent = 'Could not read response data for the map.'; return;}",
+              "  try {",
+              "   var map = L.map('map');",
+              "   var tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {",
+              "    maxZoom:19, attribution:'&copy; <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors'",
+              "   }).addTo(map);",
+              "   tiles.on('tileerror', function() {statusBox.textContent = 'Some map tiles could not load. The returned route and markers are still shown.';});",
+              "   var line = L.geoJSON(data.route.geometry, {style:{color:'#2563eb', weight:4}}).addTo(map);",
+              "   var bounds = line.getBounds();",
+              "   function marker(location, text) {",
+              "    // Text nodes keep station names and provider labels out of HTML markup.",
+              "    var popup = document.createElement('div'); popup.textContent = text;",
+              "    L.marker([location.latitude, location.longitude]).addTo(map).bindPopup(popup);",
+              "    bounds.extend([location.latitude, location.longitude]);",
+              "   }",
+              "   marker(data.start, 'Start'); marker(data.destination, 'Destination');",
+              "   data.fuel_stops.forEach(function(stop, index) {",
+              "    marker(stop, (index + 1) + '. ' + stop.name + ' | $' + stop.price_per_gallon.toFixed(3) +",
+              "     '/gal | Buy ' + stop.gallons_purchased.toFixed(2) + ' gal | $' + stop.fuel_cost.toFixed(2));",
+              "   });",
+              "   map.fitBounds(bounds, {padding:[24,24]});",
+              "   statusBox.textContent = data.fuel_stops.length ? 'Click a marker for purchase details.' : 'Starting fuel covers this trip; no purchases are needed.';",
+              "   setTimeout(function() {map.invalidateSize();}, 200);",
+              "  } catch (failure) {statusBox.textContent = 'Map rendering failed. Trip totals and stop details remain available below.';}",
+              " });",
+              "}",
+              "</script>`, payload);",
+              "}"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Invalid request - missing destination",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "{{base_url}}/api/routes/optimize/",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "routes",
+            "optimize",
+            ""
+          ]
+        },
+        "description": "Open the response Visualize tab after sending.",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"start\": {\n    \"longitude\": -96.797,\n    \"latitude\": 32.7767\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('Validation error', () => { pm.response.to.have.status(400); pm.expect(pm.response.json().error.code).to.eql('invalid_request'); });",
+              "// The API already selected stops and calculated costs; this only draws them.",
+              "var payload = pm.response.json();",
+              "if (pm.response.code === 200 && payload.route && payload.summary) {",
+              "    // Keep response numbers intact; round only the labels shown on the map.",
+              "    payload.display = {",
+              "        distance: payload.summary.total_distance_miles.toFixed(2),",
+              "        consumption: payload.summary.total_gallons_consumed.toFixed(2),",
+              "        cost: payload.summary.total_fuel_cost.toFixed(2)",
+              "    };",
+              "    payload.fuel_stops.forEach(function(stop, index) {",
+              "        stop.display = {order:index + 1, price:stop.price_per_gallon.toFixed(3),",
+              "            purchased:stop.gallons_purchased.toFixed(2), cost:stop.fuel_cost.toFixed(2),",
+              "            arrival:stop.arrival_fuel_gallons.toFixed(2), departure:stop.departure_fuel_gallons.toFixed(2),",
+              "            detour:stop.detour_miles.toFixed(2)};",
+              "    });",
+              "    pm.visualizer.set(`",
+              "<link rel=\"stylesheet\" href=\"https://unpkg.com/leaflet@1.9.4/dist/leaflet.css\"",
+              " integrity=\"sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=\" crossorigin=\"\">",
+              "<style>",
+              " body {font:14px system-ui,sans-serif;color:#203040;margin:16px}",
+              " #map {height:480px;border:1px solid #ccd5df;border-radius:8px}",
+              " .summary {display:flex;gap:24px;flex-wrap:wrap;margin:12px 0}",
+              " .summary strong {display:block;font-size:22px}",
+              " .note {color:#566574;margin:10px 0} #status {color:#8a4300}",
+              " table {border-collapse:collapse;width:100%;margin:12px 0}",
+              " td,th {padding:8px;text-align:left;border-bottom:1px solid #dce2e8}",
+              "</style>",
+              "<h2>Fuel-optimized trip</h2>",
+              "<div class=\"summary\">",
+              " <span>Driven miles<strong>{{display.distance}}</strong></span>",
+              " <span>Gallons consumed<strong>{{display.consumption}}</strong></span>",
+              " <span>Estimated purchases (USD)<strong>&#36;{{display.cost}}</strong></span>",
+              " <span>Fuel stops<strong>{{summary.number_of_stops}}</strong></span>",
+              "</div>",
+              "<p class=\"note\">The line shows the main route. Station detours are included in the totals,",
+              " but their shapes are unavailable. Intermediate distances and fuel balances are estimates.</p>",
+              "<div id=\"status\">Loading map library\u2026</div><div id=\"map\"></div>",
+              "<table><thead><tr><th>Stop</th><th>USD/gallon</th><th>Buy gallons</th><th>Cost (USD)</th>",
+              " <th>Fuel on arrival</th><th>Fuel on departure</th><th>Detour miles</th></tr></thead>",
+              "<tbody>{{#each fuel_stops}}<tr><td>{{display.order}}. {{name}}</td><td>{{display.price}}</td>",
+              " <td>{{display.purchased}}</td><td>{{display.cost}}</td><td>{{display.arrival}}</td>",
+              " <td>{{display.departure}}</td><td>{{display.detour}}</td></tr>{{/each}}</tbody></table>",
+              "<p class=\"note\">{{pricing_assumption}}</p><p class=\"note\">{{route.attribution}}</p>",
+              "<p class=\"note\">{{optimization.detour_attribution}}</p>",
+              "<script src=\"https://unpkg.com/leaflet@1.9.4/dist/leaflet.js\"",
+              " integrity=\"sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=\" crossorigin=\"\"></script>",
+              "<script>",
+              "var statusBox = document.getElementById('status');",
+              "if (typeof L === 'undefined') {",
+              " statusBox.textContent = 'Map library could not load. Check Postman external-resource access. Trip totals and stops remain available below.';",
+              "} else {",
+              " pm.getData(function(error, data) {",
+              "  if (error) {statusBox.textContent = 'Could not read response data for the map.'; return;}",
+              "  try {",
+              "   var map = L.map('map');",
+              "   var tiles = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {",
+              "    maxZoom:19, attribution:'&copy; <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> contributors'",
+              "   }).addTo(map);",
+              "   tiles.on('tileerror', function() {statusBox.textContent = 'Some map tiles could not load. The returned route and markers are still shown.';});",
+              "   var line = L.geoJSON(data.route.geometry, {style:{color:'#2563eb', weight:4}}).addTo(map);",
+              "   var bounds = line.getBounds();",
+              "   function marker(location, text) {",
+              "    // Text nodes keep station names and provider labels out of HTML markup.",
+              "    var popup = document.createElement('div'); popup.textContent = text;",
+              "    L.marker([location.latitude, location.longitude]).addTo(map).bindPopup(popup);",
+              "    bounds.extend([location.latitude, location.longitude]);",
+              "   }",
+              "   marker(data.start, 'Start'); marker(data.destination, 'Destination');",
+              "   data.fuel_stops.forEach(function(stop, index) {",
+              "    marker(stop, (index + 1) + '. ' + stop.name + ' | $' + stop.price_per_gallon.toFixed(3) +",
+              "     '/gal | Buy ' + stop.gallons_purchased.toFixed(2) + ' gal | $' + stop.fuel_cost.toFixed(2));",
+              "   });",
+              "   map.fitBounds(bounds, {padding:[24,24]});",
+              "   statusBox.textContent = data.fuel_stops.length ? 'Click a marker for purchase details.' : 'Starting fuel covers this trip; no purchases are needed.';",
+              "   setTimeout(function() {map.invalidateSize();}, 200);",
+              "  } catch (failure) {statusBox.textContent = 'Map rendering failed. Trip totals and stop details remain available below.';}",
+              " });",
+              "}",
+              "</script>`, payload);",
+              "}"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}

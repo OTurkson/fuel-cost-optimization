@@ -12,6 +12,7 @@ def geocoding_report(rows: list[dict]) -> dict:
     unsuccessful_with_location = 0
     conflicts = 0
     timestamps = []
+    # Build all summaries from the same station snapshot.
     for row in rows:
         status = row["geocoding_status"]
         provider = row["geocoding_provider"] or "unassigned"
@@ -20,6 +21,7 @@ def geocoding_report(rows: list[dict]) -> dict:
         states[row["state"]][status] += 1
         if row["geocoding_error"]:
             errors[(provider, status, row["geocoding_error"])] += 1
+        # A successful lookup should have coordinates; other statuses should not.
         has_location = row["location"] is not None
         successful_without_location += status == "successful" and not has_location
         unsuccessful_with_location += status != "successful" and has_location

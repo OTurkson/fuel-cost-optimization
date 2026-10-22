@@ -48,6 +48,7 @@ class Command(BaseCommand):
         if options["delay"] < 0:
             raise CommandError("--delay cannot be negative")
 
+        # Leave successful records alone; failures need an explicit retry request.
         station_filter = Q(geocoding_status="required")
         if options["retry_failed"]:
             station_filter |= Q(
@@ -60,6 +61,7 @@ class Command(BaseCommand):
         processed = 0
 
         for station in stations:
+            # Each provider gets the query format its matching logic expects.
             if options["provider"] == "mapbox":
                 query = mapbox_station_query(
                     station.address, station.city, station.state
@@ -81,6 +83,7 @@ class Command(BaseCommand):
             except RuntimeError as exc:
                 raise CommandError(str(exc)) from exc
 
+            # Save the outcome and query even when no coordinates were accepted.
             station.geocoding_provider = geocoder.provider_name
             station.geocoding_query = query
             station.geocoded_at = timezone.now()
@@ -102,6 +105,7 @@ class Command(BaseCommand):
                 station.geocoding_error = ""
             else:
                 station.location = None
+            # Commit each station separately so a stopped batch can resume.
             station.save(
                 update_fields=[
                     "location",

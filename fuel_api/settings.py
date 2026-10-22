@@ -59,6 +59,12 @@ MAPBOX_ACCESS_TOKEN = os.environ.get("MAPBOX_ACCESS_TOKEN", "")
 TOMTOM_API_KEY = os.environ.get("TOMTOM_API_KEY", "")
 ORS_API_KEY = os.environ.get("ORS_API_KEY", "")
 ORS_TIMEOUT_SECONDS = 30
+# File storage survives server restarts without touching the station database.
+CACHES = {"default": {
+    "BACKEND": "django.core.cache.backends.filebased.FileBasedCache",
+    "LOCATION": BASE_DIR / ".cache" / "api",
+    "OPTIONS": {"MAX_ENTRIES": 10000},
+}}
 if USE_POSTGIS:
     # Django GIS needs the native GDAL DLL on Windows; winget's GDAL package
     # installs it outside the Python environment.

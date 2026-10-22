@@ -48,6 +48,15 @@ class Coordinate:
         return [self.longitude, self.latitude]
 
 
+def geographic_meters(first: Coordinate, second: Coordinate) -> float:
+    """Spherical coordinate separation for snap checks, never a driving leg."""
+    lat1, lat2 = math.radians(first.latitude), math.radians(second.latitude)
+    dlat = lat2 - lat1
+    dlon = math.radians(second.longitude - first.longitude)
+    value = math.sin(dlat / 2) ** 2 + math.cos(lat1) * math.cos(lat2) * math.sin(dlon / 2) ** 2
+    return 2 * 6371008.8 * math.asin(math.sqrt(min(1, value)))
+
+
 @dataclass(frozen=True)
 class MainRoute:
     geometry: dict
@@ -74,6 +83,7 @@ class MainRoute:
 
 class OpenRouteService:
     endpoint = "https://api.heigit.org/openrouteservice/v2/directions/driving-car/geojson"
+    matrix_endpoint = "https://api.heigit.org/openrouteservice/v2/matrix/driving-car"
 
     def __init__(self, api_key: str, timeout_seconds: float = 30):
         if not api_key.strip():
@@ -86,21 +96,41 @@ class OpenRouteService:
     def main_route(self, start: Coordinate, destination: Coordinate) -> MainRoute:
         if start == destination:
             raise RoutingError("identical_locations", "Start and destination must be different.", 400)
-        request = Request(
+        payload = self._post_json(
             self.endpoint,
-            data=json.dumps({
+            {
                 "coordinates": [start.as_list(), destination.as_list()],
                 "units": "m", "instructions": False,
                 "extra_info": ["countryinfo"],
-            }).encode("utf-8"),
+            },
+            accept="application/geo+json",
+        )
+        return normalize_route(payload)
+
+    def distance_matrix(self, locations: list[Coordinate]):
+        from routing.matrix import MAX_MATRIX_LOCATIONS, normalize_matrix
+
+        if not 2 <= len(locations) <= MAX_MATRIX_LOCATIONS:
+            raise RoutingError("invalid_matrix_request", "Matrix requests require 2 to 58 locations.", 400)
+        # Omitting sources/destinations requests every directional pair.
+        payload = self._post_json(self.matrix_endpoint, {
+            "locations": [location.as_list() for location in locations],
+            "metrics": ["distance"], "units": "m",
+        })
+        return normalize_matrix(payload, len(locations), requested_locations=locations)
+
+    def _post_json(self, endpoint: str, body: dict, accept="application/json"):
+        request = Request(
+            endpoint,
+            data=json.dumps(body).encode("utf-8"),
             headers={
                 "Authorization": self.api_key,
-                "Content-Type": "application/json", "Accept": "application/geo+json",
+                "Content-Type": "application/json", "Accept": accept,
                 "User-Agent": "fuel-cost-optimization/1.0",
             },
             method="POST",
         )
-        # No automatic retry: a normal uncached main route consumes one call.
+        # No automatic retries, including for matrix errors or exhausted quota.
         try:
             with urlopen(request, timeout=self.timeout_seconds) as response:
                 payload = json.load(response)
@@ -116,28 +146,30 @@ class OpenRouteService:
             raise RoutingError("routing_unavailable", "The routing provider connection failed.", 503) from None
         except (ValueError, UnicodeError):
             raise RoutingError("invalid_routing_response", "The routing provider returned invalid JSON.") from None
-        return normalize_route(payload)
+        return payload
 
     @staticmethod
     def _http_error(error: HTTPError) -> RoutingError:
         if error.code == 401:
             return RoutingError("routing_authentication_failed", "The routing provider rejected the server credentials.", 503)
         if error.code == 403:
+            # The provider also uses 403 when the daily allowance is exhausted.
             return RoutingError("routing_access_denied", "Routing access was denied; check the server key and daily quota.", 503)
         if error.code == 429:
             return RoutingError("routing_rate_limited", "The routing provider rate limit was reached. Try again later.", 503)
         if error.code >= 500:
             return RoutingError("routing_unavailable", "The routing provider is temporarily unavailable.", 503)
         try:
+            # Read only the error code; the provider's message may contain inputs.
             payload = json.load(error)
             code = payload.get("error", {}).get("code")
         except (ValueError, UnicodeError, AttributeError, OSError):
             code = None
         if type(code) is not int:
             code = None
-        if code == 2004 or error.code == 413:
+        if code in {2004, 6004} or error.code == 413:
             return RoutingError("route_limit_exceeded", "The trip exceeds the routing provider's supported limits.", 422)
-        if code in {2009, 2010, 2013, 2014, 2015, 2016}:
+        if code in {2009, 2010, 2013, 2014, 2015, 2016, 6010}:
             return RoutingError("route_not_found", "No driving route could be established between these locations.", 422)
         return RoutingError("routing_request_failed", "The routing provider rejected the route request.")
 
@@ -162,6 +194,7 @@ def normalize_route(payload: dict) -> MainRoute:
     points = geometry.get("coordinates")
     if geometry.get("type") != "LineString" or not isinstance(points, list) or len(points) < 2:
         raise invalid
+    # Check the whole line before it reaches PostGIS or a map client.
     for point in points:
         if (
             not isinstance(point, list) or len(point) != 2
@@ -169,6 +202,7 @@ def normalize_route(payload: dict) -> MainRoute:
             or not -180 <= point[0] <= 180 or not -90 <= point[1] <= 90
         ):
             raise invalid
+    # Distances stay in metres internally; miles are derived from the same value.
     summary = properties.get("summary")
     if not isinstance(summary, dict):
         raise invalid

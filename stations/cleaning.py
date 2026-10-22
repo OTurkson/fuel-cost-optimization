@@ -65,6 +65,7 @@ def parse_price(value: Any) -> float | None:
 
 
 def clean(source: Path, output: Path, report_path: Path) -> dict[str, Any]:
+    # Read the workbook without changing it, and release the file when finished.
     workbook = openpyxl.load_workbook(source, read_only=True, data_only=True)
     try:
         return _clean_workbook(workbook, source, output, report_path)
@@ -87,6 +88,7 @@ def _clean_workbook(workbook, source: Path, output: Path, report_path: Path) -> 
     stations: dict[str, list[dict[str, Any]]] = defaultdict(list)
     invalid_reasons: dict[str, int] = defaultdict(int)
 
+    # Keep accepted rows grouped by station ID, regardless of Rack ID.
     for row_number, row in enumerate(rows, start=2):
         source_rows += 1
         values = dict(zip(EXPECTED_HEADERS, row))
@@ -133,6 +135,7 @@ def _clean_workbook(workbook, source: Path, output: Path, report_path: Path) -> 
             excluded_no_valid_price += 1
             continue
         duplicate_source_rows += max(0, len(records) - 1)
+        # Flag conflicting locations rather than silently merging them.
         addresses = {
             (record["address"], record["city"], record["state"]) for record in records
         }
@@ -147,6 +150,7 @@ def _clean_workbook(workbook, source: Path, output: Path, report_path: Path) -> 
         ):
             state_or_address_flags += 1
 
+        # Use the lowest supplied price; source row breaks ties consistently.
         selected = min(records, key=lambda record: (record["price"], record["source_row"]))
         retained.append(
             {
@@ -167,6 +171,7 @@ def _clean_workbook(workbook, source: Path, output: Path, report_path: Path) -> 
             }
         )
 
+    # Write an intermediate CSV so the cleaned records can be reviewed first.
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("w", newline="", encoding="utf-8") as handle:
         fieldnames = list(retained[0].keys()) if retained else []
@@ -174,6 +179,7 @@ def _clean_workbook(workbook, source: Path, output: Path, report_path: Path) -> 
         writer.writeheader()
         writer.writerows(retained)
 
+    # Record the rules and counts needed to explain how this output was produced.
     report = {
         "source_file": str(source),
         "source_format": "XLSX",

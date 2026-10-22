@@ -16,6 +16,7 @@ class FuelStation(models.Model):
     nullable because geocoding happens after cleaning and may need retrying.
     """
 
+    # One business ID represents one physical station, even with several prices.
     opis_truckstop_id = models.CharField(max_length=32, primary_key=True)
     truckstop_name = models.CharField(max_length=255)
     address = models.CharField(max_length=255)
@@ -24,6 +25,7 @@ class FuelStation(models.Model):
     selected_price_usd_per_gallon = models.DecimalField(
         max_digits=10, decimal_places=6
     )
+    # Keep enough source details to trace the selected price back to the workbook.
     selected_source_row = models.PositiveIntegerField()
     selected_source_price = models.CharField(max_length=64)
     source_row_count = models.PositiveIntegerField()
@@ -38,6 +40,7 @@ class FuelStation(models.Model):
     else:
         # The local SQLite fallback lets checks run without native GDAL.
         location = models.JSONField(null=True, blank=True)
+    # Store lookup progress and its provider so processing can resume safely.
     geocoding_status = models.CharField(
         max_length=32,
         choices=[

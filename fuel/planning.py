@@ -24,6 +24,7 @@ class InfeasibleFuelPlan(FuelPlanningError):
 
 
 def decimal_value(value, name: str) -> Decimal:
+    # Convert through text so float inputs do not bring in binary rounding noise.
     try:
         parsed = Decimal(str(value))
     except (InvalidOperation, ValueError):
@@ -35,6 +36,7 @@ def decimal_value(value, name: str) -> Decimal:
 
 @dataclass(frozen=True)
 class ItineraryStation:
+    # Distance is measured from the trip start along one fixed itinerary.
     station_id: str
     distance_miles: Decimal
     price_per_gallon: Decimal
@@ -52,6 +54,7 @@ class ItineraryStation:
 
 @dataclass(frozen=True)
 class FuelPurchase:
+    # Keep the fuel balance at each stop alongside the amount paid.
     station_id: str
     distance_miles: Decimal
     price_per_gallon: Decimal
@@ -109,6 +112,7 @@ def plan_fuel_trip(
     if any(station.distance_miles > distance for station in stations):
         raise FuelPlanningError("Station position cannot be beyond the destination")
     ordered = sorted(
+        # No fuel needs to be bought at the destination itself.
         (station for station in stations if station.distance_miles < distance),
         key=lambda station: (station.distance_miles, station.price_per_gallon, station.station_id),
     )
@@ -116,6 +120,7 @@ def plan_fuel_trip(
     position = ZERO
     purchases = []
     for index, station in enumerate(ordered):
+        # Burn fuel for the next driving leg before considering a purchase.
         needed = (station.distance_miles - position) / mpg
         if needed > fuel:
             raise InfeasibleFuelPlan(f"Insufficient fuel to reach station {station.station_id} on the supplied itinerary")
@@ -131,6 +136,7 @@ def plan_fuel_trip(
             if following.price_per_gallon <= station.price_per_gallon:
                 target_fuel = gallons_to_following
                 break
+        # Fuel already in the tank covers part, or all, of the next target.
         quantity = max(ZERO, target_fuel - fuel)
         if quantity > 0:
             departure = fuel + quantity
@@ -143,10 +149,12 @@ def plan_fuel_trip(
                 fuel_cost=(quantity * station.price_per_gallon).quantize(CENT, rounding=ROUND_HALF_UP),
             ))
             fuel = departure
+    # The last leg consumes fuel but adds no purchase at the destination.
     final_needed = (distance - position) / mpg
     if final_needed > fuel:
         raise InfeasibleFuelPlan("Insufficient fuel to reach the destination on the supplied itinerary")
     fuel -= final_needed
+    # Purchases and consumption differ because the starting tank is already paid.
     return FuelPlan(
         purchases=tuple(purchases), total_distance_miles=distance,
         fuel_economy_mpg=mpg, tank_capacity_gallons=capacity,

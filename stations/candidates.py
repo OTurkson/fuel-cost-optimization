@@ -43,11 +43,13 @@ def shortlist_candidates(
     This is a heuristic shortlist, not a fuel-feasibility or optimality proof.
     A single nearest projection is used on routes that revisit the same area.
     """
+    # Spread choices along the trip so cheap stations in one area do not dominate.
     bin_count = min(limit, max(1, math.ceil(route_miles / 100)))
     bins: dict[int, list[StationCandidate]] = {}
     for candidate in candidates:
         index = min(bin_count - 1, int(candidate.route_position_miles / route_miles * bin_count))
         bins.setdefault(index, []).append(candidate)
+    # Prefer lower prices within each area, then shorter geographic offsets.
     for options in bins.values():
         options.sort(key=lambda candidate: (
             candidate.price_per_gallon, candidate.distance_to_route_miles,
@@ -55,6 +57,7 @@ def shortlist_candidates(
         ))
     selected = []
     depth = 0
+    # Take one choice from each area before taking another from the same area.
     while len(selected) < min(limit, len(candidates)):
         for index in sorted(bins):
             if depth < len(bins[index]):
@@ -81,6 +84,7 @@ def corridor_queryset(route: MainRoute, corridor_miles: float):
 
     line = LineString(route.geometry["coordinates"], srid=4326)
     line_geography = Value(line, output_field=LineStringField(srid=4326, geography=True))
+    # Filter with the spatial index before measuring or ordering nearby stations.
     return FuelStation.objects.filter(
         geocoding_status="successful", address_conflict=False,
         location__isnull=False, selected_price_usd_per_gallon__gt=0,
@@ -134,6 +138,7 @@ def find_candidates(route: MainRoute, corridor_miles: float = 5, limit: int = 50
             route_position_miles=fraction * route.distance_miles,
             distance_to_route_miles=offset_miles,
         ))
+    # Keep the full match count so callers can see whether options were omitted.
     selected = shortlist_candidates(candidates, route.distance_miles, limit)
     return {
         "stations": [candidate.as_dict() for candidate in selected],

@@ -54,6 +54,7 @@ class Command(BaseCommand):
                     fields = [field for field in FIELDS if field != "location"]
                     writer = csv.DictWriter(handle, fieldnames=[*fields, "longitude", "latitude"])
                     writer.writeheader()
+                    # Export records needing review, plus successes when requested.
                     for row in rows:
                         status = row["geocoding_status"]
                         inconsistent = (status == "successful") != (row["location"] is not None)
@@ -65,6 +66,7 @@ class Command(BaseCommand):
                             continue
                         record = {field: row[field] for field in fields}
                         location = row["location"]
+                        # Accept the PostGIS point and the SQLite test representation.
                         if location is not None:
                             coordinates = (
                                 location["coordinates"] if isinstance(location, dict)

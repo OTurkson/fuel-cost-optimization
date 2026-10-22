@@ -59,6 +59,7 @@ class Command(BaseCommand):
             default=Path("data/cleaned_fuel_stations.csv"),
         )
 
+    # A rejected row rolls back the entire import.
     @transaction.atomic
     def handle(self, *args, **options) -> None:
         """Upsert cleaned rows so interrupted imports can safely be rerun."""
@@ -76,6 +77,7 @@ class Command(BaseCommand):
 
             imported = 0
             seen_ids: set[str] = set()
+            # Validate cleaned input before creating or updating station records.
             for row_number, row in enumerate(reader, start=2):
                 if any(row.get(column) is None for column in REQUIRED_COLUMNS):
                     raise CommandError(f"Row {row_number}: incomplete CSV row")

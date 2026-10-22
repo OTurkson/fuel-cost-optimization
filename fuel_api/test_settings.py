@@ -11,3 +11,4 @@ MIGRATION_MODULES = {"stations": None}
 MAPBOX_ACCESS_TOKEN = ""
 TOMTOM_API_KEY = ""
 ORS_API_KEY = ""
+CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}

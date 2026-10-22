@@ -34,6 +34,7 @@ class MapboxGeocoder:
 
     def geocode(self, query: str) -> GeocodingResult:
         """Return a cautious match; do not turn a weak result into coordinates."""
+        # Mapbox gets an address query rather than a truck-stop name search.
         parameters = urlencode(
             {
                 "q": query,
@@ -161,6 +162,7 @@ class TomTomGeocoder:
         ):
             return GeocodingResult(status="failed", error="Incomplete TomTom result")
 
+        # A high score is not enough when the result is in the wrong city or state.
         if expected_state:
             state_matches = [
                 result
@@ -223,6 +225,7 @@ class TomTomGeocoder:
                 error="Top TomTom result has low confidence",
             )
 
+        # Check every close competitor, even when an earlier result is a duplicate.
         for candidate in results[1:]:
             if (
                 self._number(candidate.get("score"))
@@ -266,6 +269,7 @@ class TomTomGeocoder:
             for position in positions
         ):
             return False
+        # Distance only helps identify duplicates; it does not prove station access.
         lat1, lat2 = (math.radians(position["lat"]) for position in positions)
         dlat = lat2 - lat1
         dlon = math.radians(positions[1]["lon"] - positions[0]["lon"])

@@ -3,10 +3,10 @@
 A Django REST API for planning driving routes and estimating fuel costs across
 the United States using supplied fuel-station prices.
 
-The API currently returns route geometry, driving distance, and optional nearby
-station candidates. Partial-refueling logic is implemented separately; detour
-and fuel-cost integration is in progress. Prices are static demo values treated
-as USD per US gallon.
+The API returns route geometry, recommended fuel stops, detour mileage, partial
+fuel purchases, and estimated total expenditure. It assumes a full 50-gallon
+starting tank and 10 MPG. Prices are static demo values treated as USD per US
+gallon; intermediate driving distances and fuel balances are estimates.
 
 Built with Python, Django REST Framework, PostgreSQL/PostGIS, openrouteservice
 for routing, and Mapbox and TomTom integrations for station geocoding. TomTom
@@ -42,8 +42,9 @@ The API runs at `http://127.0.0.1:8000`.
 
 ## Usage
 
-Import the [Postman collection](postman/main-routing.postman_collection.json),
-or send `POST /api/routes/main/` with a JSON body:
+Import the [Postman collection](postman/fuel-optimization.postman_collection.json),
+send a request, and open the response **Visualize** tab for the route map.
+The principal endpoint is `POST /api/routes/optimize/`:
 
 ```json
 {
@@ -52,5 +53,24 @@ or send `POST /api/routes/main/` with a JSON body:
 }
 ```
 
-Add `"candidate_search": {"corridor_miles": 5, "limit": 50}` to include nearby
-stations from the prepared station dataset.
+Alternatively, supply `start_address` and `destination_address` strings.
+Trips within 500 miles require no fuel purchases with the starting full tank.
+Longer trips use successfully geocoded stations from the prepared dataset.
+
+Run the offline tests:
+
+```powershell
+.\.venv312\Scripts\python.exe manage.py test --settings=fuel_api.test_settings
+```
+
+## Challenges encountered
+
+- **Geocoding API consumption:** Resolving thousands of station addresses required
+  controlling request volume. Bounded batches, request delays, and saved progress
+  allow processing to resume without repeating successful lookups.
+- **Provider differences:** Mapbox and TomTom required different query formats,
+  response parsing, and matching rules. Mapbox queries use address details, while
+  TomTom queries also include station names to help identify truck stops.
+- **Ambiguous matches:** Highway addresses, similarly named stations, and broad
+  street-level results did not always identify a precise location. Uncertain
+  matches are recorded for review rather than assigned guessed coordinates.
