@@ -56,6 +56,9 @@ ASGI_APPLICATION = "fuel_api.asgi.application"
 
 USE_POSTGIS = os.environ.get("USE_POSTGIS", "0").lower() in {"1", "true", "yes"}
 MAPBOX_ACCESS_TOKEN = os.environ.get("MAPBOX_ACCESS_TOKEN", "")
+TOMTOM_API_KEY = os.environ.get("TOMTOM_API_KEY", "")
+ORS_API_KEY = os.environ.get("ORS_API_KEY", "")
+ORS_TIMEOUT_SECONDS = 30
 if USE_POSTGIS:
     # Django GIS needs the native GDAL DLL on Windows; winget's GDAL package
     # installs it outside the Python environment.
@@ -101,6 +104,7 @@ STATIC_URL = "static/"
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 REST_FRAMEWORK = {
+    "UNAUTHENTICATED_USER": None,
     "DEFAULT_RENDERER_CLASSES": [
         "rest_framework.renderers.JSONRenderer",
     ],

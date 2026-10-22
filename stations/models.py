@@ -52,7 +52,7 @@ class FuelStation(models.Model):
     geocoding_provider = models.CharField(max_length=32, blank=True)
     geocoding_query = models.TextField(blank=True)
     geocoding_relevance = models.DecimalField(
-        max_digits=4, decimal_places=3, null=True, blank=True
+        max_digits=6, decimal_places=3, null=True, blank=True
     )
     geocoded_at = models.DateTimeField(null=True, blank=True)
 

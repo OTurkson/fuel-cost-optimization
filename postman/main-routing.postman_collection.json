@@ -1,0 +1,165 @@
+{
+  "info": {
+    "name": "Fuel API - Phase 4 main routing",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "Main routing and optional read-only PostGIS candidate searches. Start Django separately and set ORS_API_KEY on the server. Every successful trip uses one Directions call. Candidate distances are geographic estimates, not driving detours or fuel recommendations."
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://127.0.0.1:8000",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Main route: Dallas to Houston",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"start\": {\n    \"longitude\": -96.797,\n    \"latitude\": 32.7767\n  },\n  \"destination\": {\n    \"longitude\": -95.3698,\n    \"latitude\": 29.7604\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": "{{base_url}}/api/routes/main/"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+              "const body = pm.response.json();",
+              "pm.test('GeoJSON LineString returned', function () { pm.expect(body.route.geometry.type).to.eql('LineString'); });",
+              "pm.test('Road distance and units agree', function () { pm.expect(body.route.distance_meters).to.be.above(0); pm.expect(body.route.distance_miles).to.be.closeTo(body.route.distance_meters / 1609.344, 0.000001); });",
+              "pm.test('Exactly one main routing call', function () { pm.expect(body.metrics.routing_api_calls).to.eql(1); });",
+              "pm.test('Attribution included', function () { pm.expect(body.route.attribution).to.be.a('string').and.not.empty; });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Validation: missing destination",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"start\": {\n    \"longitude\": -96.797,\n    \"latitude\": 32.7767\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": "{{base_url}}/api/routes/main/"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 400', function () { pm.response.to.have.status(400); });",
+              "const body = pm.response.json();",
+              "pm.test('Input error returned', function () { pm.expect(body.error.code).to.eql('invalid_request'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Validation: identical endpoints",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"start\": {\n    \"longitude\": -96.797,\n    \"latitude\": 32.7767\n  },\n  \"destination\": {\n    \"longitude\": -96.797,\n    \"latitude\": 32.7767\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": "{{base_url}}/api/routes/main/"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 400', function () { pm.response.to.have.status(400); });",
+              "const body = pm.response.json();",
+              "pm.test('Input error returned', function () { pm.expect(body.error.code).to.eql('invalid_request'); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Main route with candidate stations",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"start\": {\n    \"longitude\": -96.797,\n    \"latitude\": 32.7767\n  },\n  \"destination\": {\n    \"longitude\": -95.3698,\n    \"latitude\": 29.7604\n  },\n  \"candidate_search\": {\n    \"corridor_miles\": 5,\n    \"limit\": 50\n  }\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": "{{base_url}}/api/routes/main/"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('HTTP 200', function () { pm.response.to.have.status(200); });",
+              "const body = pm.response.json();",
+              "pm.test('GeoJSON LineString returned', function () { pm.expect(body.route.geometry.type).to.eql('LineString'); });",
+              "pm.test('Road distance and units agree', function () { pm.expect(body.route.distance_meters).to.be.above(0); pm.expect(body.route.distance_miles).to.be.closeTo(body.route.distance_meters / 1609.344, 0.000001); });",
+              "pm.test('Exactly one main routing call', function () { pm.expect(body.metrics.routing_api_calls).to.eql(1); });",
+              "pm.test('Attribution included', function () { pm.expect(body.route.attribution).to.be.a('string').and.not.empty; });",
+              "pm.test('Bounded candidate shortlist returned', function () { pm.expect(body.candidate_search.stations).to.be.an('array'); pm.expect(body.candidate_search.returned_count).to.be.at.most(50); });",
+              "pm.test('Candidates are ordered along route', function () { const stops = body.candidate_search.stations; for (let i = 1; i < stops.length; i++) pm.expect(stops[i].route_position_miles).to.be.at.least(stops[i-1].route_position_miles); });",
+              "pm.test('Fuel feasibility is deferred', function () { pm.expect(body.candidate_search.fuel_feasibility_evaluated).to.eql(false); });"
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
