@@ -8,6 +8,18 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# Keep local credentials convenient for development without adding a dotenv
+# dependency; production environments can still provide normal environment
+# variables directly.
+ENV_FILE = BASE_DIR / ".env"
+if ENV_FILE.is_file():
+    for line in ENV_FILE.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        name, value = line.split("=", 1)
+        os.environ.setdefault(name.strip(), value.strip().strip("\"'"))
+
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "development-only-insecure-key")
 DEBUG = os.environ.get("DJANGO_DEBUG", "1").lower() in {"1", "true", "yes"}
 ALLOWED_HOSTS = [
@@ -20,6 +32,7 @@ INSTALLED_APPS = [
     "django.contrib.contenttypes",
     "django.contrib.staticfiles",
     "rest_framework",
+    "stations",
 ]
 
 MIDDLEWARE = [
@@ -43,14 +56,31 @@ ASGI_APPLICATION = "fuel_api.asgi.application"
 
 USE_POSTGIS = os.environ.get("USE_POSTGIS", "0").lower() in {"1", "true", "yes"}
 if USE_POSTGIS:
+    # Django GIS needs the native GDAL DLL on Windows; winget's GDAL package
+    # installs it outside the Python environment.
+    gdal_library = Path(
+        os.environ.get("GDAL_LIBRARY_PATH", r"C:\Program Files\GDAL\gdal.dll")
+    )
+    if gdal_library.is_file():
+        GDAL_LIBRARY_PATH = str(gdal_library)
+        os.environ.setdefault("PATH", "")
+        os.environ["PATH"] = f"{gdal_library.parent};{os.environ['PATH']}"
+        if hasattr(os, "add_dll_directory"):
+            os.add_dll_directory(str(gdal_library.parent))
+    INSTALLED_APPS.insert(1, "django.contrib.gis")
+if USE_POSTGIS:
     DATABASES = {
         "default": {
             "ENGINE": "django.contrib.gis.db.backends.postgis",
-            "NAME": os.environ.get("POSTGRES_DB", "fuel_cost"),
-            "USER": os.environ.get("POSTGRES_USER", "postgres"),
-            "PASSWORD": os.environ.get("POSTGRES_PASSWORD", ""),
-            "HOST": os.environ.get("POSTGRES_HOST", "localhost"),
-            "PORT": os.environ.get("POSTGRES_PORT", "5432"),
+            "NAME": os.environ.get("DB_NAME", os.environ.get("POSTGRES_DB", "fuel_cost")),
+            "USER": os.environ.get("DB_USER", os.environ.get("POSTGRES_USER", "postgres")),
+            "PASSWORD": os.environ.get(
+                "DB_PASSWORD", os.environ.get("POSTGRES_PASSWORD", "")
+            ),
+            "HOST": os.environ.get(
+                "DB_HOST", os.environ.get("POSTGRES_HOST", "localhost")
+            ),
+            "PORT": os.environ.get("DB_PORT", os.environ.get("POSTGRES_PORT", "5432")),
         }
     }
 else:

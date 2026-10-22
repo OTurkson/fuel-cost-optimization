@@ -1,25 +1,56 @@
 # Fuel-Optimized Route API
 
-This project implements the demonstration API described in
-[the project brief](priv/PROJECT_BRIEF.md). Development is being completed
-phase by phase so that data preparation, geocoding, routing, optimization, and
-API integration remain independently testable.
+This project implements the Fuel Cost Optimization API. Development is completed phase by phase so that data preparation, geocoding, routing, optimization, and API integration remain independently testable.
 
 ## Phase 1: environment setup
 
-The repository contains a Django 5.2 project with Django REST Framework and
-the PostgreSQL driver. Until PostgreSQL/PostGIS is configured, the project uses
+The repository contains a Django 6.1.2 project with Django REST Framework and
+the PostgreSQL driver. Django 6.1.2 is the latest official stable Django
+release. It requires Python 3.12 or newer. Until PostgreSQL/PostGIS is configured, the project uses
 SQLite locally so Django checks and the development server can be verified.
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
-.\.venv\Scripts\python.exe manage.py check
-.\.venv\Scripts\python.exe manage.py runserver
+.\.venv312\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv312\Scripts\python.exe manage.py check
+.\.venv312\Scripts\python.exe manage.py runserver
 ```
 
-Set `USE_POSTGIS=1` and the `POSTGRES_*` variables from
+Set `USE_POSTGIS=1` and the `DB_*` variables from
 [.env.example](.env.example) when running against PostgreSQL with PostGIS.
-No API keys or credentials belong in the repository.
+This mode also requires the native GDAL library on the development machine,
+as required by Django GIS. Generate and apply migrations in that mode; the
+local SQLite fallback uses a JSON placeholder for the not-yet-populated
+location so checks can run without GDAL. No API keys or credentials belong in
+the repository.
 
-The next implementation phase will add the station model, geocoding status,
-and reproducible import of the already-cleaned station data.
+### Windows GIS prerequisites
+
+The project expects both sides of the spatial stack:
+
+1. **GDAL on the development machine.** The GDAL runtime is installed
+   separately from Python and is configured automatically from
+   `C:\Program Files\GDAL\gdal.dll` when present.
+2. **PostGIS inside PostgreSQL.** Open
+   `C:\Program Files\PostgreSQL\18\bin\stackbuilder.exe`, select the running
+   PostgreSQL 18 instance, choose the Spatial Extensions category, and install
+   the PostGIS package. Then enable it in the project database:
+
+   ```sql
+   CREATE EXTENSION IF NOT EXISTS postgis;
+   ```
+
+   The SQL can be run in pgAdmin or with `psql`. The Django migration cannot
+   create the extension files; they must be installed on the PostgreSQL
+   server first.
+
+After that setup, verify the project and create the spatial table:
+
+```powershell
+.\.venv312\Scripts\python.exe manage.py check
+.\.venv312\Scripts\python.exe manage.py migrate
+.\.venv312\Scripts\python.exe manage.py import_cleaned_stations
+```
+
+The station model, geocoding status fields, and reproducible cleaned-data
+import command are now in place. The next implementation phase is geocoding
+the retained stations.
